@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.bytes": "lua",
+        "ostream": "cpp"
+    }
+}
