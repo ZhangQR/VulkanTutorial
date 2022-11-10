@@ -5,6 +5,7 @@ set(PROJECT_NAME VulkanTutorial)
 # 设置工程名
 project (${PROJECT_NAME})
 
+set (CMAKE_CXX_STANDARD 17)
 set (3RD_DIR ${PROJECT_SOURCE_DIR}/3rd)
 set(CMAKE_MODULE_PATH ${3RD_DIR})
 

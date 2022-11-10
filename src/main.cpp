@@ -8,6 +8,7 @@
 #include <vector>
 #include <unordered_set>
 #include <string>
+#include <optional>
 const static int Width = 800;
 const static int Height = 640;
 std::vector<const char*> validationLayers = {
@@ -19,6 +20,16 @@ bool enableValidationLayers = true;
 bool enableValidationLayers = false;
 #endif
 
+struct QueueFamilyIndices
+{
+    std::optional<uint32_t> graphicsFamily;
+
+    bool IsComplete()
+    {
+        return graphicsFamily.has_value();
+    }
+};
+
 class VulkanApp
 {
 public:
@@ -29,6 +40,10 @@ private:
     void InitVulkan();
     void MainLoop();
     void CleanUp();
+    void PickPhysicalDevice();
+    void CreateLogicDevice();
+    bool IsDeviceSuitable(VkPhysicalDevice device);
+    QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice physicalDevice);
 
     bool CheckExtensionSupport(std::vector<const char*>& extensions);
     void CreateInstance();
@@ -46,9 +61,6 @@ private:
         VkDebugUtilsMessengerEXT debugMessenger, 
         const VkAllocationCallbacks* pAllocator);
 
-    VkInstance instance;
-    GLFWwindow* window;
-    VkDebugUtilsMessengerEXT debugMessenger;
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         VkDebugUtilsMessageTypeFlagsEXT messageType,
         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
@@ -57,6 +69,12 @@ private:
         return VK_FALSE;
     }
 
+    VkInstance instance;
+    GLFWwindow* window;
+    VkDebugUtilsMessengerEXT debugMessenger;
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    VkDevice device;
+    VkQueue graphicsQueue;
 };
 
 void VulkanApp::Run()
@@ -96,6 +114,8 @@ void VulkanApp::InitVulkan()
 {
     CreateInstance();
     SetupValidationLayer();
+    PickPhysicalDevice();
+    CreateLogicDevice();
 }
 
 void VulkanApp::MainLoop()
@@ -108,10 +128,11 @@ void VulkanApp::MainLoop()
 
 void VulkanApp::CleanUp()
 {
+    vkDestroyDevice(device, nullptr);
     if (enableValidationLayers)
     {
         // vkDestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
-        // DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+        DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
     }
     vkDestroyInstance(instance, nullptr);
     glfwDestroyWindow(window);
@@ -157,9 +178,6 @@ void VulkanApp::CreateInstance()
     appInfo.pEngineName = "No Engine";
     appInfo.engineVersion = 1;
     appInfo.apiVersion = VK_API_VERSION_1_0;
-
-    
-    
     
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -217,6 +235,110 @@ void VulkanApp::SetupValidationLayer()
     {
         std::cerr << "create validation layers failed" << std::endl;
     }
+}
+
+void VulkanApp::PickPhysicalDevice()
+{
+    uint32_t count = 0;
+    vkEnumeratePhysicalDevices(instance, &count, nullptr);
+    if (count <= 0)
+    {
+        std::cerr << "no physical device" << std::endl;
+    }
+    std::vector<VkPhysicalDevice> physicalDeviceList(count);
+    vkEnumeratePhysicalDevices(instance, &count, physicalDeviceList.data());
+
+    for (auto& device : physicalDeviceList)
+    {
+        if (IsDeviceSuitable(device))
+        {
+            physicalDevice = device;
+            break;
+        }
+    }
+
+    if (physicalDevice == VK_NULL_HANDLE) {
+        throw std::runtime_error("failed to find a suitable GPU!");
+    }
+}
+
+bool VulkanApp::IsDeviceSuitable(VkPhysicalDevice device)
+{
+    // 还可以检查是独显，核显；支持哪些特性等
+    //VkPhysicalDeviceProperties deviceProperties;
+    //VkPhysicalDeviceFeatures deviceFeatures;
+    //vkGetPhysicalDeviceProperties(device, &deviceProperties);
+    //vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+    //return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
+    //    deviceFeatures.geometryShader;
+
+    return FindQueueFamilies(device).IsComplete();
+}
+
+QueueFamilyIndices VulkanApp::FindQueueFamilies(VkPhysicalDevice physicalDevice)
+{
+    QueueFamilyIndices indices;
+    uint32_t count;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
+    std::vector<VkQueueFamilyProperties> queueFamily(count);
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, queueFamily.data());
+    int i = 0;
+    for (auto& qf : queueFamily)
+    {
+        if (qf.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        {
+            indices.graphicsFamily = i;
+            if (indices.IsComplete())
+            {
+                break;
+            }
+        }
+        i++;
+    }
+    return indices;
+}
+
+
+void VulkanApp::CreateLogicDevice()
+{
+    QueueFamilyIndices indices = FindQueueFamilies(physicalDevice);
+
+    VkDeviceQueueCreateInfo queueCreateInfo{};
+    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueCreateInfo.pNext = nullptr;
+    queueCreateInfo.flags = 0;
+    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+    queueCreateInfo.queueCount = 1;
+    float priorities = 1.0f;
+    queueCreateInfo.pQueuePriorities = &priorities;
+
+    VkDeviceCreateInfo deviceCreateInfo{};
+    deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceCreateInfo.pNext = nullptr;
+    deviceCreateInfo.flags = 0;
+    deviceCreateInfo.queueCreateInfoCount = 1;
+    deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
+    
+    // device validation layers 已经弃用，但是最好保持和 instance 一致，以兼容
+    if (enableValidationLayers)
+    {
+        deviceCreateInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+        deviceCreateInfo.ppEnabledLayerNames = validationLayers.data();
+    }
+    else
+    {
+        deviceCreateInfo.enabledLayerCount = 0;
+    }
+
+    deviceCreateInfo.enabledExtensionCount = 0;
+    VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
+    if (vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device) != VK_SUCCESS) 
+    {
+        throw std::runtime_error("can't create device");
+    }
+    vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
 }
 
 bool VulkanApp::CheckValidationLayerSupport()
