@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <string>
 #include <optional>
+#include <set>
 const static int Width = 800;
 const static int Height = 640;
 std::vector<const char*> validationLayers = {
@@ -23,10 +24,11 @@ bool enableValidationLayers = false;
 struct QueueFamilyIndices
 {
     std::optional<uint32_t> graphicsFamily;
+    std::optional<uint32_t> presentFamily;
 
     bool IsComplete()
     {
-        return graphicsFamily.has_value();
+        return graphicsFamily.has_value() && presentFamily.has_value();
     }
 };
 
@@ -47,6 +49,7 @@ private:
 
     bool CheckExtensionSupport(std::vector<const char*>& extensions);
     void CreateInstance();
+    void CreateSurface();
     void SetupValidationLayer();
     bool CheckValidationLayerSupport();
     void GetVkDebugUtilsMessengerCreateInfoEXT(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
@@ -75,6 +78,8 @@ private:
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device;
     VkQueue graphicsQueue;
+    VkQueue presentQueue;
+    VkSurfaceKHR surface;
 };
 
 void VulkanApp::Run()
@@ -113,6 +118,7 @@ void VulkanApp::InitWindows()
 void VulkanApp::InitVulkan()
 {
     CreateInstance();
+    CreateSurface();
     SetupValidationLayer();
     PickPhysicalDevice();
     CreateLogicDevice();
@@ -128,6 +134,7 @@ void VulkanApp::MainLoop()
 
 void VulkanApp::CleanUp()
 {
+    vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyDevice(device, nullptr);
     if (enableValidationLayers)
     {
@@ -217,6 +224,14 @@ void VulkanApp::CreateInstance()
     }
 }
 
+void VulkanApp::CreateSurface()
+{
+    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
+    {
+        throw std::runtime_error("can't create windows surface");
+    }
+}
+
 void VulkanApp::SetupValidationLayer()
 {
     if (!enableValidationLayers)
@@ -289,10 +304,15 @@ QueueFamilyIndices VulkanApp::FindQueueFamilies(VkPhysicalDevice physicalDevice)
         if (qf.queueFlags & VK_QUEUE_GRAPHICS_BIT)
         {
             indices.graphicsFamily = i;
-            if (indices.IsComplete())
-            {
-                break;
-            }
+        }
+        VkBool32 surfaceSupport = VK_FALSE;
+        if (vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &surfaceSupport) == VK_SUCCESS)
+        {
+            indices.presentFamily = i;
+        }
+        if (indices.IsComplete())
+        {
+            break;
         }
         i++;
     }
@@ -303,22 +323,27 @@ QueueFamilyIndices VulkanApp::FindQueueFamilies(VkPhysicalDevice physicalDevice)
 void VulkanApp::CreateLogicDevice()
 {
     QueueFamilyIndices indices = FindQueueFamilies(physicalDevice);
-
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.pNext = nullptr;
-    queueCreateInfo.flags = 0;
-    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-    queueCreateInfo.queueCount = 1;
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    std::set<uint32_t> uniqueQueueFamilies{ indices.graphicsFamily.value(),indices.presentFamily.value() };
     float priorities = 1.0f;
-    queueCreateInfo.pQueuePriorities = &priorities;
+    for (uint32_t queueFamilyIndex : uniqueQueueFamilies)
+    {
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.pNext = nullptr;
+        queueCreateInfo.flags = 0;
+        queueCreateInfo.queueFamilyIndex = queueFamilyIndex;
+        queueCreateInfo.queueCount = 1;
+        queueCreateInfo.pQueuePriorities = &priorities;
+        queueCreateInfos.push_back(queueCreateInfo);
+    }
 
     VkDeviceCreateInfo deviceCreateInfo{};
     deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceCreateInfo.pNext = nullptr;
     deviceCreateInfo.flags = 0;
-    deviceCreateInfo.queueCreateInfoCount = 1;
-    deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
+    deviceCreateInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+    deviceCreateInfo.pQueueCreateInfos = queueCreateInfos.data();
     
     // device validation layers 已经弃用，但是最好保持和 instance 一致，以兼容
     if (enableValidationLayers)
@@ -339,6 +364,7 @@ void VulkanApp::CreateLogicDevice()
         throw std::runtime_error("can't create device");
     }
     vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+    vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 }
 
 bool VulkanApp::CheckValidationLayerSupport()
