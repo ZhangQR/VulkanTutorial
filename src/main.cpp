@@ -61,6 +61,7 @@ private:
     QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice physicalDevice);
     bool CheckPhysicalDeviceExtents(VkPhysicalDevice physicalDevice);
     void CreateSwapChain();
+    void CreateImageView();
     SwapChainSupportDetails GetSwapChainSupportDetails(VkPhysicalDevice physicalDevice);
     VkSurfaceFormatKHR GetSwapChainImageFormat(SwapChainSupportDetails);
     VkExtent2D GetSwapChainImageExtent(SwapChainSupportDetails);
@@ -101,6 +102,7 @@ private:
     VkSurfaceKHR surface;
     VkSwapchainKHR swapChain;
     std::vector<VkImage> swapChainImages;
+    std::vector<VkImageView> swapChainImageView;
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
 };
@@ -141,6 +143,7 @@ void VulkanApp::InitVulkan()
     PickPhysicalDevice();
     CreateLogicDevice();
     CreateSwapChain();
+    CreateImageView();
 }
 
 void VulkanApp::MainLoop()
@@ -153,6 +156,11 @@ void VulkanApp::MainLoop()
 
 void VulkanApp::CleanUp()
 {
+    // swapChain 里面的 Image 不需要 Destroy，但是 ImageView 需要
+    for (auto imageView : swapChainImageView)
+    {
+        vkDestroyImageView(device, imageView, nullptr);
+    }
     vkDestroySwapchainKHR(device, swapChain, nullptr);
     vkDestroyDevice(device, nullptr);
     if (enableValidationLayers)
@@ -461,6 +469,34 @@ void VulkanApp::CreateSwapChain()
     }
     swapChainExtent = imageExtent;
     swapChainImageFormat = imageFormat.format;
+}
+
+void VulkanApp::CreateImageView()
+{
+    swapChainImageView.resize(swapChainImages.size());
+    for (size_t i = 0; i < swapChainImages.size(); i++)
+    {
+        VkImageViewCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        createInfo.pNext = nullptr;
+        createInfo.flags = 0;
+        createInfo.image = swapChainImages[i];
+        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        createInfo.format = swapChainImageFormat;
+        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        createInfo.subresourceRange.baseArrayLayer = 0;
+        createInfo.subresourceRange.layerCount = 1;
+        createInfo.subresourceRange.baseMipLevel = 0;
+        createInfo.subresourceRange.levelCount = 1;
+        if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageView[i]) != VK_SUCCESS)
+        {
+            throw std::runtime_error("create image view failed!");
+        }
+    }
 }
 
 VkSurfaceFormatKHR VulkanApp::GetSwapChainImageFormat(SwapChainSupportDetails details)
