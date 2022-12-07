@@ -1,6 +1,6 @@
-D:/vulkan/Bin/glslc.exe shader.vert -o vert.spv
-D:/vulkan/Bin/glslc.exe shader.frag -o frag.spv
-D:/vulkan/Bin/glslc.exe shader.tesc -o tesc.spv
-D:/vulkan/Bin/glslc.exe shader.tese -o tese.spv
-D:/vulkan/Bin/glslc.exe shader.geom -o geom.spv
+glslc.exe shader.vert -o vert.spv
+glslc.exe shader.frag -o frag.spv
+glslc.exe shader.tesc -o tesc.spv
+glslc.exe shader.tese -o tese.spv
+glslc.exe shader.geom -o geom.spv
 pause
